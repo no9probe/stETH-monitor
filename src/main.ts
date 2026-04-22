@@ -186,15 +186,40 @@ type LidoApiQueue = {
   status: string
 }
 
-async function fetchLidoApi(): Promise<LidoApiQueue | null> {
+// 缓存 Lido API 响应：最多每 60 秒调一次，失败则复用上次成功结果
+const LIDO_API_TTL_MS = 60_000
+let lidoApiCache: { data: LidoApiQueue; fetchedAt: number } | null = null
+let lidoInflight: Promise<LidoApiQueue | null> | null = null
+
+async function fetchLidoApiRaw(): Promise<LidoApiQueue | null> {
   try {
     const resp = await fetch(LIDO_QUEUE_API)
     if (!resp.ok) return null
-    return (await resp.json()) as LidoApiQueue
+    const data = (await resp.json()) as LidoApiQueue
+    if (data.status !== 'calculated') return null
+    return data
   } catch (e) {
     console.error('[lido api]', e)
     return null
   }
+}
+
+async function getLidoApi(): Promise<LidoApiQueue | null> {
+  // 1) 缓存还新鲜 → 直接返回
+  if (lidoApiCache && Date.now() - lidoApiCache.fetchedAt < LIDO_API_TTL_MS) {
+    return lidoApiCache.data
+  }
+  // 2) 合并并发请求（避免多个事件同时触发多次网络调用）
+  if (lidoInflight) return lidoInflight
+
+  lidoInflight = fetchLidoApiRaw().finally(() => { lidoInflight = null })
+  const fresh = await lidoInflight
+  if (fresh) {
+    lidoApiCache = { data: fresh, fetchedAt: Date.now() }
+    return fresh
+  }
+  // 3) 本次失败 → 降级到上次成功的缓存（如果有）
+  return lidoApiCache?.data ?? null
 }
 
 async function fetchQueue() {
@@ -204,7 +229,7 @@ async function fetchQueue() {
       client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastRequestId' }),
       client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastFinalizedRequestId' })
     ]) as Promise<[bigint, bigint, bigint]>,
-    fetchLidoApi()
+    getLidoApi()
   ])
 
   const [unfinalized, lastReq, lastFin] = onchain
@@ -216,14 +241,13 @@ async function fetchQueue() {
   $('last-fin').textContent = lastFin.toString()
   $('pending-count').textContent = pending.toString()
 
-  // 预计等待天数：优先用 Lido 官方 API，失败则降级到粗略估算
-  if (api && api.status === 'calculated') {
+  if (api) {
     $('queue-days').textContent = api.days < 1 ? '< 1 天' : `~${api.days} 天`
-    $('queue-source').textContent = `Lido API · ${formatAgo(api.stethLastUpdate)}`
+    $('queue-source').textContent = `Lido API · 数据于 ${formatAgo(api.stethLastUpdate)}`
   } else {
-    const estDays = unfinalizedEth / 108000 // 粗略 fallback：~108k ETH/天
+    const estDays = unfinalizedEth / 108000
     $('queue-days').textContent = `~${estDays.toFixed(1)} 天 (估算)`
-    $('queue-source').textContent = 'API 不可用 · 链上估算'
+    $('queue-source').textContent = 'API 首次加载中 · 链上估算'
   }
 
   pulse('card-queue')
