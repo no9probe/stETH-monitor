@@ -246,8 +246,8 @@ async function fetchQueue() {
     $('queue-source').textContent = `Lido API · 数据于 ${formatAgo(api.stethLastUpdate)}`
   } else {
     const estDays = unfinalizedEth / 108000
-    $('queue-days').textContent = `~${estDays.toFixed(1)} 天 (估算)`
-    $('queue-source').textContent = 'API 首次加载中 · 链上估算'
+    $('queue-days').textContent = `~${estDays.toFixed(1)} 天 (链上粗估)`
+    $('queue-source').textContent = 'Lido API 加载中 · 30 秒后重试...'
   }
 
   pulse('card-queue')
@@ -327,6 +327,12 @@ async function start() {
         setConnStatus('error', '区块订阅失败')
       }
     })
+
+    // 独立的 30 秒队列刷新定时器（不依赖 Lido 事件 / 区块兜底）
+    // 初始 API 调用失败后能快速重试；命中缓存时只刷新链上数据
+    setInterval(() => {
+      fetchQueue().catch(console.error)
+    }, 30_000)
   } catch (err) {
     console.error(err)
     setConnStatus('error', `连接失败: ${(err as Error).message}`)
