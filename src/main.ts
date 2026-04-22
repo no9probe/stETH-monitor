@@ -8,9 +8,8 @@ const RPC_WS = 'wss://ethereum-rpc.publicnode.com'
 const CHAINLINK_STETH_ETH = '0x86392dC19c0b719886221c78AB11eb8Cf5c52812' as const
 // Lido 退出队列合约
 const LIDO_WITHDRAWAL_QUEUE = '0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1' as const
-
-// 以太坊协议每天可退出的 ETH（粗略估算，会随协议升级变化）
-const DAILY_EXIT_CAPACITY_ETH = 57600
+// Lido 官方队列时长 API（比链上估算更准）
+const LIDO_QUEUE_API = 'https://wq-api.lido.fi/v1/request-time?amount=1'
 
 // ---------- ABI ----------
 const CHAINLINK_ABI = [
@@ -178,26 +177,55 @@ async function fetchPrice() {
   pulse('card-price')
 }
 
-async function fetchQueue() {
-  const [unfinalized, lastReq, lastFin] = (await Promise.all([
-    client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'unfinalizedStETH' }),
-    client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastRequestId' }),
-    client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastFinalizedRequestId' })
-  ])) as [bigint, bigint, bigint]
+type LidoApiQueue = {
+  days: number
+  requests: number
+  steth: string
+  stethLastUpdate: number
+  validatorsLastUpdate: number
+  status: string
+}
 
+async function fetchLidoApi(): Promise<LidoApiQueue | null> {
+  try {
+    const resp = await fetch(LIDO_QUEUE_API)
+    if (!resp.ok) return null
+    return (await resp.json()) as LidoApiQueue
+  } catch (e) {
+    console.error('[lido api]', e)
+    return null
+  }
+}
+
+async function fetchQueue() {
+  const [onchain, api] = await Promise.all([
+    Promise.all([
+      client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'unfinalizedStETH' }),
+      client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastRequestId' }),
+      client.readContract({ address: LIDO_WITHDRAWAL_QUEUE, abi: LIDO_QUEUE_ABI, functionName: 'getLastFinalizedRequestId' })
+    ]) as Promise<[bigint, bigint, bigint]>,
+    fetchLidoApi()
+  ])
+
+  const [unfinalized, lastReq, lastFin] = onchain
   const unfinalizedEth = Number(formatEther(unfinalized))
-  const days = unfinalizedEth / DAILY_EXIT_CAPACITY_ETH
   const pending = lastReq - lastFin
 
   $('queue-eth').textContent = `${unfinalizedEth.toLocaleString('en-US', { maximumFractionDigits: 0 })} ETH`
-  $('queue-days').textContent = days < 1 / 24
-    ? '< 1 小时'
-    : days < 1
-    ? `~${Math.round(days * 24)} 小时`
-    : `~${days.toFixed(1)} 天`
   $('last-req').textContent = lastReq.toString()
   $('last-fin').textContent = lastFin.toString()
   $('pending-count').textContent = pending.toString()
+
+  // 预计等待天数：优先用 Lido 官方 API，失败则降级到粗略估算
+  if (api && api.status === 'calculated') {
+    $('queue-days').textContent = api.days < 1 ? '< 1 天' : `~${api.days} 天`
+    $('queue-source').textContent = `Lido API · ${formatAgo(api.stethLastUpdate)}`
+  } else {
+    const estDays = unfinalizedEth / 108000 // 粗略 fallback：~108k ETH/天
+    $('queue-days').textContent = `~${estDays.toFixed(1)} 天 (估算)`
+    $('queue-source').textContent = 'API 不可用 · 链上估算'
+  }
+
   pulse('card-queue')
 }
 

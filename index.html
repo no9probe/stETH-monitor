@@ -150,6 +150,7 @@
         <div class="big loading" id="queue-eth">—</div>
         <div class="meta">
           <div class="meta-row"><span class="k">预计等待</span><span class="v" id="queue-days">—</span></div>
+          <div class="meta-row"><span class="k">数据源</span><span class="v" id="queue-source">—</span></div>
           <div class="meta-row"><span class="k">最新请求 ID</span><span class="v" id="last-req">—</span></div>
           <div class="meta-row"><span class="k">已最终化 ID</span><span class="v" id="last-fin">—</span></div>
           <div class="meta-row"><span class="k">排队请求数</span><span class="v" id="pending-count">—</span></div>
@@ -170,7 +171,7 @@
 
     <div class="footer">
       Chainlink <code>0x86392dC1...Cf5c52812</code> · Lido WithdrawalQueue <code>0x889edC2e...412F9B1</code><br>
-      退出速率按 ~57,600 ETH/天 估算（随协议升级变化）
+      预计等待天数来自 Lido 官方 API（<code>wq-api.lido.fi</code>）
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
