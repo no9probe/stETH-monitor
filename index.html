@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>stETH 脱锚监控</title>
+  <title>Chainlink 脱锚监控</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -14,7 +14,7 @@
       -webkit-font-smoothing: antialiased;
     }
     .container {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 48px 24px;
     }
@@ -22,7 +22,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 40px;
+      margin-bottom: 32px;
     }
     h1 {
       font-size: 22px;
@@ -47,19 +47,40 @@
     .dot.connected { background: #16a34a; box-shadow: 0 0 8px rgba(22,163,74,.45); }
     .dot.connecting { background: #d97706; }
     .dot.error { background: #dc2626; box-shadow: 0 0 8px rgba(220,38,38,.5); }
+
+    .section { margin-bottom: 32px; }
+    .section-title {
+      font-size: 11px;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      margin-bottom: 12px;
+      padding-left: 2px;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 20px;
     }
+    .grid-dense {
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
     .card {
       background: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 12px;
       padding: 24px;
       box-shadow: 0 1px 2px rgba(0,0,0,.04);
-      transition: background .4s;
+      transition: background .4s, border-color .2s;
     }
+    .card.dense { padding: 16px 18px; border-radius: 10px; }
+    .card.stale { border-color: #fbbf24; }
+    .card.expired { border-color: #dc2626; }
+
     .card-title {
       font-size: 12px;
       color: #6b7280;
@@ -67,7 +88,26 @@
       letter-spacing: 0.08em;
       font-weight: 600;
       margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
+    .card.dense .card-title { margin-bottom: 10px; font-size: 11px; }
+
+    .tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #f3f4f6;
+      color: #6b7280;
+      letter-spacing: 0.03em;
+      font-weight: 500;
+      text-transform: none;
+    }
+    .tag.stale   { background: #fef3c7; color: #92400e; }
+    .tag.expired { background: #fee2e2; color: #991b1b; }
+
     .big {
       font-size: 42px;
       font-weight: 400;
@@ -76,9 +116,12 @@
       line-height: 1.1;
       color: #111827;
     }
-    .deviation-ok { color: #16a34a; }
-    .deviation-warn { color: #d97706; }
+    .card.dense .big { font-size: 26px; }
+
+    .deviation-ok     { color: #16a34a; }
+    .deviation-warn   { color: #d97706; }
     .deviation-danger { color: #dc2626; }
+
     .meta {
       margin-top: 16px;
       font-size: 13px;
@@ -86,21 +129,53 @@
       display: grid;
       gap: 6px;
     }
+    .card.dense .meta { margin-top: 10px; gap: 4px; font-size: 12px; }
+
     .meta-row {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
+      gap: 8px;
     }
-    .meta-row .k { color: #9ca3af; }
+    .meta-row .k { color: #9ca3af; white-space: nowrap; }
     .meta-row .v {
       font-variant-numeric: tabular-nums;
       color: #374151;
       font-family: 'SF Mono', Menlo, Consolas, monospace;
       font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
+    .card.dense .meta-row .v { font-size: 11px; }
+
+    .range-bar {
+      height: 4px;
+      background: #f3f4f6;
+      border-radius: 2px;
+      position: relative;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+    .range-bar .marker {
+      position: absolute;
+      top: -2px;
+      width: 2px;
+      height: 8px;
+      background: #111827;
+      border-radius: 1px;
+    }
+    .range-bar .anchor-tick {
+      position: absolute;
+      top: -1px;
+      width: 1px;
+      height: 6px;
+      background: #9ca3af;
+    }
+
     .loading { color: #d1d5db; }
     .footer {
-      margin-top: 40px;
+      margin-top: 32px;
       color: #9ca3af;
       font-size: 12px;
       text-align: center;
@@ -114,9 +189,7 @@
       font-size: 11px;
       color: #6b7280;
     }
-    .pulse {
-      animation: pulse .8s ease-out;
-    }
+    .pulse { animation: pulse .8s ease-out; }
     @keyframes pulse {
       0%   { background: #ecfdf5; }
       100% { background: #ffffff; }
@@ -126,52 +199,65 @@
 <body>
   <div class="container">
     <header>
-      <h1>stETH / ETH 脱锚监控</h1>
+      <h1>Chainlink 脱锚监控</h1>
       <div class="status">
         <span class="dot" id="conn-dot"></span>
         <span id="conn-text">初始化...</span>
       </div>
     </header>
 
-    <div class="grid">
-      <div class="card" id="card-price">
-        <div class="card-title">stETH / ETH 偏离</div>
-        <div class="big loading" id="deviation">—</div>
-        <div class="meta">
-          <div class="meta-row"><span class="k">市场价</span><span class="v" id="price">—</span></div>
-          <div class="meta-row"><span class="k">锚定价</span><span class="v">1.000000</span></div>
-          <div class="meta-row"><span class="k">Round ID</span><span class="v" id="round-id">—</span></div>
-          <div class="meta-row"><span class="k">链上更新于</span><span class="v" id="price-age">—</span></div>
+    <section class="section">
+      <div class="section-title">重点关注</div>
+      <div class="grid" id="featured-grid">
+        <!-- stETH 主卡由 JS 插入到最前 -->
+        <div class="card" id="card-queue">
+          <div class="card-title">Lido 退出队列</div>
+          <div class="big loading" id="queue-eth">—</div>
+          <div class="meta">
+            <div class="meta-row"><span class="k">预计等待</span><span class="v" id="queue-days">—</span></div>
+            <div class="meta-row"><span class="k">数据源</span><span class="v" id="queue-source">—</span></div>
+            <div class="meta-row"><span class="k">最新请求 ID</span><span class="v" id="last-req">—</span></div>
+            <div class="meta-row"><span class="k">已最终化 ID</span><span class="v" id="last-fin">—</span></div>
+            <div class="meta-row"><span class="k">排队请求数</span><span class="v" id="pending-count">—</span></div>
+          </div>
         </div>
-      </div>
 
-      <div class="card" id="card-queue">
-        <div class="card-title">Lido 退出队列</div>
-        <div class="big loading" id="queue-eth">—</div>
-        <div class="meta">
-          <div class="meta-row"><span class="k">预计等待</span><span class="v" id="queue-days">—</span></div>
-          <div class="meta-row"><span class="k">数据源</span><span class="v" id="queue-source">—</span></div>
-          <div class="meta-row"><span class="k">最新请求 ID</span><span class="v" id="last-req">—</span></div>
-          <div class="meta-row"><span class="k">已最终化 ID</span><span class="v" id="last-fin">—</span></div>
-          <div class="meta-row"><span class="k">排队请求数</span><span class="v" id="pending-count">—</span></div>
+        <div class="card">
+          <div class="card-title">网络状态</div>
+          <div class="big" id="block-num">—</div>
+          <div class="meta">
+            <div class="meta-row"><span class="k">最新区块</span><span class="v" id="block-time">—</span></div>
+            <div class="meta-row"><span class="k">RPC</span><span class="v">publicnode ws</span></div>
+            <div class="meta-row"><span class="k">事件推送</span><span class="v" id="ws-events">0</span></div>
+            <div class="meta-row"><span class="k">页面运行</span><span class="v" id="uptime">0s</span></div>
+          </div>
         </div>
       </div>
+    </section>
 
-      <div class="card">
-        <div class="card-title">网络状态</div>
-        <div class="big" id="block-num">—</div>
-        <div class="meta">
-          <div class="meta-row"><span class="k">最新区块</span><span class="v" id="block-time">—</span></div>
-          <div class="meta-row"><span class="k">RPC</span><span class="v">publicnode ws</span></div>
-          <div class="meta-row"><span class="k">事件推送</span><span class="v" id="ws-events">0</span></div>
-          <div class="meta-row"><span class="k">页面运行</span><span class="v" id="uptime">0s</span></div>
-        </div>
-      </div>
-    </div>
+    <section class="section">
+      <div class="section-title">LST 脱锚（相对 ETH）</div>
+      <div class="grid grid-dense" id="section-lst"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">稳定币脱锚（相对 USD）</div>
+      <div class="grid grid-dense" id="section-stable"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">BTC 衍生品（WBTC/BTC + cbBTC / tBTC 的 USD 价与隐含 BTC 比）</div>
+      <div class="grid grid-dense" id="section-btc"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">常规币价</div>
+      <div class="grid grid-dense" id="section-general"></div>
+    </section>
 
     <div class="footer">
-      Chainlink <code>0x86392dC1...Cf5c52812</code> · Lido WithdrawalQueue <code>0x889edC2e...412F9B1</code><br>
-      预计等待天数来自 Lido 官方 API（<code>wq-api.lido.fi</code>）
+      所有价格数据来自 Chainlink 主网喂价合约，走 publicnode WebSocket · Lido 队列 API 走 <code>wq-api.lido.fi</code><br>
+      脱锚偏离阈值仅供参考（0.2% 以内绿 · 0.2–0.8% 黄 · ≥ 0.8% 红）
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
